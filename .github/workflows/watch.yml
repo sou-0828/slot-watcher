@@ -1,0 +1,77 @@
+name: watch
+
+on:
+  schedule:
+    # Actionsの時刻はUTC。JST 6:00〜23:45 = UTC 21:00〜14:45（深夜0〜6時は動かない）
+    - cron: "*/15 21-23,0-14 * * *"
+  workflow_dispatch:
+    inputs:
+      test_notify:
+        description: "Discordにテスト通知だけ送る（サイトにはアクセスしない）"
+        type: boolean
+        default: true
+
+permissions:
+  actions: write   # 致命的エラー時に自分自身を無効化するため
+  contents: read
+
+concurrency:
+  group: watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # 定期実行は変数 WATCH_ENABLED が true のときだけ動く（スイッチ）
+    if: github.event_name == 'workflow_dispatch' || vars.WATCH_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -q requests
+
+      - name: 前回の状態を読み込む
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: state-${{ github.run_id }}
+          restore-keys: state-
+
+      - name: チェック
+        id: check
+        env:
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+          LOGIN_ID: ${{ secrets.LOGIN_ID }}
+          LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TARGET_DAYS: ${{ secrets.TARGET_DAYS }}
+          MODE: notify
+          TEST_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notify && 'true' || 'false' }}
+        run: |
+          set +e
+          python watcher.py
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: 状態を保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: state-${{ github.run_id }}
+
+      - name: 致命的エラーなら自動停止
+        if: steps.check.outputs.code == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow disable watch.yml --repo "${{ github.repository }}"
+          echo "ワークフローを無効化しました"
+          exit 1
+
+      - name: 一時的なエラー
+        if: steps.check.outputs.code == '1'
+        run: exit 1
