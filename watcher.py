@@ -38,7 +38,66 @@ LOGIN_ID = env("LOGIN_ID")
 LOGIN_PASSWORD = env("LOGIN_PASSWORD")
 WEBHOOK_URL = env("DISCORD_WEBHOOK_URL")
 TARGET_DAYS = [d for d in env("TARGET_DAYS").replace("、", ",").split(",") if d]  # 例: "土,日"
+TARGET_DATES_RAW = env("TARGET_DATES")  # 例: "12/12, 12/13, 12/20~12/27"
 MODE = env("MODE", "notify")  # notify のみ対応。auto は後で追加
+
+
+def parse_dates(raw, today=None):
+    """
+    "12/12, 2026-12-13, 12/20~12/27" → {date, ...}
+    年を省略したら、今日以降で一番近い日付として扱う。
+    """
+    today = today or datetime.now(JST).date()
+
+    def one(s):
+        s = s.strip().replace("-", "/")
+        parts = [int(p) for p in s.split("/")]
+        if len(parts) == 3:
+            return datetime(parts[0], parts[1], parts[2]).date()
+        m, d = parts
+        cand = datetime(today.year, m, d).date()
+        if cand < today:
+            cand = datetime(today.year + 1, m, d).date()
+        return cand
+
+    result = set()
+    for token in raw.replace("、", ",").replace("～", "~").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if "~" in token:
+            a, b = (one(x) for x in token.split("~", 1))
+            while a <= b:
+                result.add(a)
+                a += timedelta(days=1)
+        else:
+            result.add(one(token))
+    return result
+
+
+# ---------------- サーバー停止時間 ----------------
+# 予約サイトの受付時間（ログイン画面の記載より）
+#   月〜土: 6:00〜20:00, 21:00〜翌5:00  → 20:00〜21:00 は停止
+#   日・祝: 6:00〜18:00, 19:30〜翌5:00  → 18:00〜19:30 は停止
+#   毎日 5:00〜6:00 も停止
+
+def is_sunday_or_holiday(d):
+    if d.weekday() == 6:
+        return True
+    try:
+        import jpholiday
+        return jpholiday.is_holiday(d)
+    except ImportError:
+        return False
+
+
+def in_maintenance(now):
+    minutes = now.hour * 60 + now.minute
+    if 5 * 60 <= minutes < 6 * 60:
+        return True
+    if is_sunday_or_holiday(now.date()):
+        return 18 * 60 <= minutes < 19 * 60 + 30
+    return 20 * 60 <= minutes < 21 * 60
 
 
 # ---------------- Discord ----------------
@@ -96,6 +155,11 @@ def fetch_slots(session):
     """
     TODO(12/5以降): 予約画面を読み取って空き枠のリストを返す。
     戻り値の例: [{"date": "2026-12-12", "weekday": "土", "period": "3"}]
+
+    自動予約を足すときの絶対ルール:
+    - 翌教習日の枠は取らない（夜の予約操作は「当日予約」扱いでキャンセル不可、
+      キャンセル料 5,100円/時限）。取るのは2日以上先の枠だけ
+    - 土日プラスコースなので 18:00 以降の枠は予約できない → 除外
     """
     raise NotImplementedError("空き枠の読み取りはまだ未実装")
 
@@ -112,6 +176,9 @@ def run_check():
 
     if TARGET_DAYS:
         slots = [s for s in slots if s.get("weekday") in TARGET_DAYS]
+    if TARGET_DATES_RAW:
+        dates = {d.isoformat() for d in parse_dates(TARGET_DATES_RAW)}
+        slots = [s for s in slots if s.get("date") in dates]
 
     seen = set(load_json(STATE_FILE, []))
     new_slots = [s for s in slots if slot_key(s) not in seen]
@@ -139,6 +206,19 @@ def main():
                               ("LOGIN_PASSWORD", LOGIN_PASSWORD), ("DISCORD_WEBHOOK_URL", WEBHOOK_URL)] if not v]
     if missing:
         print("設定が足りないのでスキップ: " + ", ".join(missing))
+        return 0
+
+    if TARGET_DATES_RAW:
+        try:
+            parse_dates(TARGET_DATES_RAW)
+        except (ValueError, TypeError):
+            notify("⛔ TARGET_DATES の書き方が間違っているので停止しました。\n"
+                   "例: 12/12, 12/13, 12/20~12/27")
+            print("TARGET_DATES の形式エラー → 停止")
+            return 2
+
+    if in_maintenance(datetime.now(JST)):
+        print("サーバー停止時間なのでスキップ")
         return 0
 
     if MODE != "notify":

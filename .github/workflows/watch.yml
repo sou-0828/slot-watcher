@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install -q requests
+      - run: pip install -q requests jpholiday
 
       - name: 前回の状態を読み込む
         uses: actions/cache/restore@v4
@@ -48,7 +48,8 @@ jobs:
           LOGIN_ID: ${{ secrets.LOGIN_ID }}
           LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TARGET_DAYS: ${{ secrets.TARGET_DAYS }}
+          TARGET_DAYS: ${{ vars.TARGET_DAYS }}
+          TARGET_DATES: ${{ vars.TARGET_DATES }}
           MODE: notify
           TEST_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notify && 'true' || 'false' }}
         run: |
