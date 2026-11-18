@@ -115,6 +115,16 @@ def notify(text):
         return False
 
 
+def redact(text):
+    """エラー文からURL・ID・パスワードを伏せる"""
+    import re
+    text = re.sub(r"https?://\S+", "[URL]", text)
+    for secret in (LOGIN_ID, LOGIN_PASSWORD, WEBHOOK_URL, TARGET_URL):
+        if secret:
+            text = text.replace(secret, "[伏せ字]")
+    return text
+
+
 # ---------------- 状態の保存 ----------------
 
 def load_json(path, default):
@@ -183,15 +193,18 @@ def run_check():
     seen = set(load_json(STATE_FILE, []))
     new_slots = [s for s in slots if slot_key(s) not in seen]
 
+    notified = True
     if new_slots:
         lines = [f"・{s['date']}（{s['weekday']}）{s['period']}時限" for s in new_slots]
-        notify("🚗 空きが出ました\n" + "\n".join(lines) + f"\n{TARGET_URL}")
-        print(f"新しい空き: {len(new_slots)}件 → 通知済み")  # 件数だけ
+        notified = notify("🚗 空きが出ました\n" + "\n".join(lines) + f"\n{TARGET_URL}")
+        print(f"新しい空き: {len(new_slots)}件 → " + ("通知済み" if notified else "通知失敗（次回また通知）"))
     else:
         print("新しい空きなし")
 
     # 今ある空きだけ覚えておく（埋まった枠は忘れる）
-    save_json(STATE_FILE, [slot_key(s) for s in slots])
+    # 通知に失敗した枠は覚えない → 次回もう一度通知される
+    keep = [s for s in slots if notified or slot_key(s) in seen]
+    save_json(STATE_FILE, [slot_key(s) for s in keep])
 
 
 def main():
@@ -248,7 +261,7 @@ def main():
         print(f"エラー（{errors['count']}回連続）: {type(e).__name__}")  # 種類だけ
         if errors["count"] >= MAX_CONSECUTIVE_ERRORS:
             notify(f"⛔ エラーが{MAX_CONSECUTIVE_ERRORS}回続いたので停止しました。\n"
-                   f"最後のエラー: {type(e).__name__}: {str(e)[:300]}")
+                   f"最後のエラー: {type(e).__name__}: {redact(str(e))[:300]}")
             return 2
         return 1
 
