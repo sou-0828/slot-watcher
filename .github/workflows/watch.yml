@@ -2,8 +2,9 @@ name: watch
 
 on:
   schedule:
-    # Actionsの時刻はUTC。JST 6:00〜23:45 = UTC 21:00〜14:45（深夜0〜6時は動かない）
-    - cron: "*/15 21-23,0-14 * * *"
+    # Actionsの時刻はUTC。JST 6:00〜23:55 = UTC 21:00〜14:55（深夜0〜6時は動かない）
+    # 5分おきに起動して、実際のチェック間隔は watcher.py が5〜15分でランダムに決める
+    - cron: "*/5 21-23,0-14 * * *"
   workflow_dispatch:
     inputs:
       test_notify:
@@ -52,6 +53,7 @@ jobs:
           TARGET_DATES: ${{ vars.TARGET_DATES }}
           MODE: notify
           TEST_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notify && 'true' || 'false' }}
+          FORCE_CHECK: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
         run: |
           set +e
           python watcher.py
