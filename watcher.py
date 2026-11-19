@@ -26,7 +26,7 @@ STATE_FILE = Path("state/seen.json")      # 通知済みの枠（ハッシュだ
 ERROR_FILE = Path("state/errors.json")    # 連続エラー回数
 SCHEDULE_FILE = Path("state/schedule.json")  # 次にチェックする時刻
 MIN_INTERVAL_MIN = 5    # チェック間隔の最小（分）
-MAX_INTERVAL_MIN = 15   # チェック間隔の最大（分）
+MAX_INTERVAL_MIN = 10   # チェック間隔の最大（分）
 MAX_CONSECUTIVE_ERRORS = 3
 REQUEST_TIMEOUT = 20
 
@@ -242,14 +242,14 @@ def main():
         print("MODEは notify のみ対応")
         return 2
 
-    # 間隔を5〜15分のランダムにする（Actionsは5分おきに起動し、時間が来ていなければ何もしない）
+    # 間隔を5〜10分のランダムにする（Actionsは5分おきに起動し、時間が来ていなければ何もしない）
     now = time.time()
     schedule = load_json(SCHEDULE_FILE, {"next": 0})
     if env("FORCE_CHECK") != "true" and now < schedule.get("next", 0):
         wait = int((schedule["next"] - now) // 60) + 1
         print(f"次のチェックまで約{wait}分 → スキップ")
         return 0
-    # Actionsの起動は5分刻みなので、5・10・15分から同じ確率で選ぶ
+    # Actionsの起動は5分刻みなので、5・10分から同じ確率で選ぶ
     # （少し早めに「時間が来た」扱いにして、次の起動で確実にチェックされるようにする）
     interval = random.choice(range(MIN_INTERVAL_MIN, MAX_INTERVAL_MIN + 1, 5)) * 60
     save_json(SCHEDULE_FILE, {"next": now + interval - 60})

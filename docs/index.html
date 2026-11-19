@@ -60,7 +60,7 @@
 <body>
 <div class="wrap">
   <h1>日付設定</h1>
-  <p class="lead">行きたい日をタップして「保存」。反映は次のチェック（5〜15分以内）から。</p>
+  <p class="lead">行きたい日をタップして「保存」。反映は次のチェック（5〜10分以内）から。</p>
 
   <div class="card" id="setupCard">
     <details id="setup">
@@ -254,7 +254,7 @@ async function load() {
     savedValue = toValue(selected);
     $("watch").checked = watch === "true";
     $("watch").disabled = false;
-    $("watchLabel").textContent = watch === "true" ? "5〜15分おきに確認中" : "停止中";
+    $("watchLabel").textContent = watch === "true" ? "5〜10分おきに確認中" : "停止中";
     $("setupCard").classList.add("hidden");
   } catch (e) { handleError(e); $("watchLabel").textContent = "読み込み失敗"; }
   render();
@@ -278,7 +278,7 @@ $("watch").onchange = async e => {
   e.target.disabled = true;
   try {
     await writeVar("WATCH_ENABLED", on ? "true" : "false");
-    $("watchLabel").textContent = on ? "5〜15分おきに確認中" : "停止中";
+    $("watchLabel").textContent = on ? "5〜10分おきに確認中" : "停止中";
     toast(on ? "✅ チェックを開始しました" : "⏸ チェックを止めました");
   } catch (err) { e.target.checked = !on; handleError(err); }
   e.target.disabled = false;
